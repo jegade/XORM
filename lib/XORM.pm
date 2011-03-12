@@ -14,7 +14,7 @@ has 'id' => (
 
     isa      => 'Int',
     is       => 'rw',
-    required => 1
+    required => 0,
 );
 
 =head2 create
@@ -26,7 +26,6 @@ has 'id' => (
 sub create {
 
     my ( $self, $attr ) = @_;
-  
 
     $self->save;
 
@@ -41,7 +40,7 @@ sub create {
 sub save {
 
     my ($self)     = @_;
-    my $collection = $self->meta->name;
+    my $collection = $self->_collection;
     my $packed     = $self->pack;
 
     use Data::Dumper;
@@ -62,7 +61,6 @@ sub update {
 
     my ( $self, $attr ) = @_;
 
-
     $self->save;
 }
 
@@ -75,15 +73,22 @@ sub delete {
 
     my $self = shift;
 
-    my $collection = $self->meta->name;
+    my $collection = $self->_collection;
     $self->_storage->$collection->remove( { id => $self->id } );
 
 }
 
-
 sub _storage {
 
     return MongoDB::Connection->new->xorm;
+}
+
+sub _collection {
+
+    my ($self) = @_;
+    my $name = $self->meta->name;
+    $name =~ s/\W+/_/g;
+    return lc($name);
 }
 
 1;
