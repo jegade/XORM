@@ -7,14 +7,17 @@ package XORM;
 
 use Moose;
 use MooseX::Storage;
+use Data::UUID;
+use Array::Utils qw(:all);
 
 with Storage;
 
 has 'id' => (
 
-    isa      => 'Int',
+    isa      => 'Str',
     is       => 'rw',
-    required => 0,
+    required => 1,
+    default  => sub { Data::UUID->new->create_str },
 );
 
 =head2 create
@@ -78,6 +81,12 @@ sub delete {
 
 }
 
+=head2 private
+
+    interal stuff
+
+=cut
+
 sub _storage {
 
     return MongoDB::Connection->new->xorm;
@@ -86,9 +95,71 @@ sub _storage {
 sub _collection {
 
     my ($self) = @_;
-    my $name = $self->meta->name;
-    $name =~ s/\W+/_/g;
-    return lc($name);
+    return "objects";
+}
+
+sub _to_class {
+
+    my ( $self, $class, $doc ) = @_;
+    return $class->unpack($doc);
+
+}
+
+sub _add_related {
+
+    my ( $self, $relation, $obj ) = @_;
+    $relation = "_" . $relation;
+    my $id = [ ref $obj ? $obj->id : $obj ];
+    my $objs = [ unique( @{ $self->relation }, @$id ) ];
+    $self->_set_related( $relation, $objs );
+    return 1;
+}
+
+sub _delete_related {
+
+    my ( $self, $relation, $obj ) = @_;
+    $relation = "_" . $relation;
+    my $id = [ ref $obj ? $obj->id : $obj ];
+    my $objs = [ array_minus( @{ $self->relation }, @$id ) ];
+    $self->_set_related( $relation, $objs );
+    return 1;
+}
+
+sub _set_related {
+
+    my ( $self, $relation, $objs ) = @_;
+    $relation = "_" . $relation;
+    my $ids = [ map { ref $_ ? $_->id : $_ } @$objs ];
+    $self->$relation($ids);
+    return 1;
+}
+
+sub _related {
+
+    my ( $self, $relation ) = @_;
+    $relation = "_" . $relation;
+    my $objs = $self->$relation;
+    return [ map { $self->_get_from_storage($_) } @$objs ];
+
+}
+
+sub _get_from_storage {
+
+    my ( $self, $id ) = @_;
+
+    my $collection = $self->_collection;
+
+    my $doc = $self->_storage->$collection->find_one( { id => $id } );
+
+    if ($doc) {
+        
+        my $class = $doc->{__CLASS__};
+        return $class->unpack($doc);
+    } else {
+
+        return;
+    }
+
 }
 
 1;
