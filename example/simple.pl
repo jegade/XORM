@@ -35,8 +35,7 @@ has '_members' => ( isa => 'ArrayRef[Str]', is => 'rw' );
 sub members {
 
     my ($self) = @_;
-    my $members = $self->_related('members');
-    return $members;
+    return $self->_related('members');
 }
 
 sub add_member {
@@ -81,10 +80,11 @@ $event->set_members( [ $person, $person ] );
 
 $event->save;
 
-foreach my $member ( @{$event->members} ) {
 
-       
+my $itr = $event->members;
+
+while ( my $member = $itr->next ) {
+
     print $member->email."\n";
-
 }
 

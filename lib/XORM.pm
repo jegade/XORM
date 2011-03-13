@@ -10,6 +10,10 @@ use MooseX::Storage;
 use Data::UUID;
 use Array::Utils qw(:all);
 
+use Data::Model::Iterator;
+
+
+
 with Storage;
 
 has 'id' => (
@@ -139,7 +143,17 @@ sub _related {
     my ( $self, $relation ) = @_;
     $relation = "_" . $relation;
     my $objs = $self->$relation;
-    return [ map { $self->_get_from_storage($_) } @$objs ];
+
+    if ( wantarray ) { 
+
+        return [ map { $self->_get_from_storage($_) } @$objs ];
+
+    } else {
+
+        return Data::Model::Iterator->new( 
+            sub { $self->_get_from_storage( shift @$objs ) },
+        )
+    }
 
 }
 
