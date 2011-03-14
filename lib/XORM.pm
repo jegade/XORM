@@ -10,9 +10,9 @@ use MooseX::Storage;
 use Data::UUID;
 use Array::Utils qw(:all);
 
+use XORM::Set;
+
 use Data::Model::Iterator;
-
-
 
 with Storage;
 
@@ -47,14 +47,13 @@ sub create {
 sub save {
 
     my ($self)     = @_;
-    my $collection = $self->_collection;
     my $packed     = $self->pack;
 
     use Data::Dumper;
 
     warn Dumper($packed);
 
-    $self->_storage->$collection->update( { id => $self->id }, $packed, { "upsert" => 1, "multiple" => 0 } );
+    $self->collection->update( { id => $self->id }, $packed, { "upsert" => 1, "multiple" => 0 } );
     return;
 }
 
@@ -79,9 +78,7 @@ sub update {
 sub delete {
 
     my $self = shift;
-
-    my $collection = $self->_collection;
-    $self->_storage->$collection->remove( { id => $self->id } );
+    $self->collection->remove( { id => $self->id } );
 
 }
 
@@ -102,6 +99,13 @@ sub _collection {
     return "objects";
 }
 
+sub collection {
+
+    my $self = shift;
+    my $collection = $self->_collection;
+    return $self->_storage->$collection;
+}
+
 sub _to_class {
 
     my ( $self, $class, $doc ) = @_;
@@ -111,28 +115,28 @@ sub _to_class {
 
 sub _add_related {
 
-    my ( $self, $relation, $obj ) = @_;
-    $relation = "_" . $relation;
+    my ( $self, $relation, $class, $obj ) = @_;
+    $relation = "_" . $relation unless $relation =~ /^_/;
     my $id = [ ref $obj ? $obj->id : $obj ];
-    my $objs = [ unique( @{ $self->relation }, @$id ) ];
-    $self->_set_related( $relation, $objs );
+    my $objs = [ unique( @{ $self->$relation }, @$id ) ];
+    $self->_set_related( $relation, $class, $objs );
     return 1;
 }
 
 sub _delete_related {
 
-    my ( $self, $relation, $obj ) = @_;
-    $relation = "_" . $relation;
+    my ( $self, $relation, $class, $obj ) = @_;
+    $relation = "_" . $relation unless $relation =~ /^_/;
     my $id = [ ref $obj ? $obj->id : $obj ];
-    my $objs = [ array_minus( @{ $self->relation }, @$id ) ];
-    $self->_set_related( $relation, $objs );
+    my $objs = [ array_minus( @{ $self->$relation }, @$id ) ];
+    $self->_set_related( $relation, $class,  $objs );
     return 1;
 }
 
 sub _set_related {
 
-    my ( $self, $relation, $objs ) = @_;
-    $relation = "_" . $relation;
+    my ( $self, $relation, $class, $objs ) = @_;
+    $relation = "_" . $relation unless $relation =~ /^_/;
     my $ids = [ map { ref $_ ? $_->id : $_ } @$objs ];
     $self->$relation($ids);
     return 1;
@@ -140,22 +144,19 @@ sub _set_related {
 
 sub _related {
 
-    my ( $self, $relation ) = @_;
-    $relation = "_" . $relation;
+    my ( $self, $relation, $class ) = @_;
+    $relation = "_" . $relation unless $relation =~ /^_/;
     my $objs = $self->$relation;
-
-    if ( wantarray ) { 
-
-        return [ map { $self->_get_from_storage($_) } @$objs ];
-
-    } else {
-
-        return Data::Model::Iterator->new( 
-            sub { $self->_get_from_storage( shift @$objs ) },
-        )
-    }
-
+    return $self->_set( $class )->add_filter( { id => $objs } );
 }
+
+sub objectify {
+    
+    my ( $self, $doc ) = @_;
+
+    my $class = $doc->{__CLASS__};
+    return $class->unpack($doc);
+}   
 
 sub _get_from_storage {
 
@@ -166,7 +167,7 @@ sub _get_from_storage {
     my $doc = $self->_storage->$collection->find_one( { id => $id } );
 
     if ($doc) {
-        
+
         my $class = $doc->{__CLASS__};
         return $class->unpack($doc);
     } else {
@@ -175,5 +176,28 @@ sub _get_from_storage {
     }
 
 }
+
+sub _set_name {
+
+    my ( $self, $gclass  ) = @_;
+    return ( $gclass || ref $self)."::Set";
+}
+
+sub _set {
+
+    my ( $self, $gclass ) = @_;
+
+    my $class = $self->_set_name( $gclass );
+    eval "use $class;";
+    
+    if ( $@ ) {
+
+        eval "package $class; use Moose; extends 'XORM::Set'; 1;";
+        eval "use $class;" ;
+    }
+
+    return $class->new( base => $self );
+}
+
 
 1;
